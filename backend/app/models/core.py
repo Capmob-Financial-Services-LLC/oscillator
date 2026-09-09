@@ -25,22 +25,24 @@ class Team(Base, TimestampMixin):
     __tablename__ = "teams"
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    # nullable: rows synced from Zoho Sprints carry zoho_id instead.
+    # nullable: rows synced from Zoho Sprints / GitHub carry zoho_id/github_id instead.
     linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     zoho_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     key: Mapped[str | None] = mapped_column(String(32))
     name: Mapped[str | None] = mapped_column(String(255))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Actor(Base, TimestampMixin):
-    """A Linear or Zoho Sprints user. Keyed on whichever source id is set."""
+    """A Linear, Zoho Sprints, or GitHub user. Keyed on whichever source id is set."""
 
     __tablename__ = "actors"
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     zoho_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     name: Mapped[str | None] = mapped_column(String(255))
     email: Mapped[str | None] = mapped_column(String(320), index=True)
     avatar_url: Mapped[str | None] = mapped_column(String(1024))
@@ -61,9 +63,11 @@ class Cycle(Base, TimestampMixin):
     __table_args__ = (Index("ix_cycles_team_id", "team_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    # nullable: rows synced from Zoho Sprints (sprints) carry zoho_id instead.
+    # nullable: rows synced from Zoho Sprints (sprints) / GitHub (milestones)
+    # carry zoho_id/github_id instead.
     linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     zoho_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     team_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("teams.id", ondelete="CASCADE")
     )

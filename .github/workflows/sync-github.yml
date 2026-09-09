@@ -1,0 +1,57 @@
+name: GitHub Issues Sync
+
+# Cron polling architecture, mirroring sync.yml (Linear) / sync-zoho.yml —
+# no always-on server, no webhooks. Own schedule/concurrency group so it
+# never blocks on (or is blocked by) the other syncs.
+on:
+  schedule:
+    # Every hour, 10 minutes past — offset from Linear's :00 and Zoho's :05
+    # so all three don't contend for GitHub Actions runners at once.
+    - cron: "10 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: github-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SSL: "true"
+        run: alembic upgrade head
+
+      - name: Run GitHub sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # A PAT or GitHub App token with repo + read:project scope on the
+          # Capmob-Financial-Services-LLC org — NOT the Actions-provided
+          # secrets.GITHUB_TOKEN, which is scoped only to this repo and
+          # can't read a repo in a different org. Add this secret manually
+          # under this repo's Settings -> Secrets and variables -> Actions.
+          GITHUB_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
+          GITHUB_SYNC_ORG: Capmob-Financial-Services-LLC
+          GITHUB_SYNC_REPO: BSA
+          GITHUB_PROJECT_TITLE: "CAM MVP"
+          DB_SSL: "true"
+        # A non-zero exit (any phase failed) fails the job loudly; the
+        # watermark is NOT advanced, so the next run safely re-syncs.
+        run: python -m app.jobs.sync_github

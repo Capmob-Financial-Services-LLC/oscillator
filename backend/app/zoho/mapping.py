@@ -1,5 +1,11 @@
 """Zoho status -> our normalized state_type mapping.
 
+The actual heuristic now lives in app.services.status_mapping (shared with
+the GitHub sync, which faces the same problem: a free-text status/Status-field
+name with no fixed enum). Re-exported here so existing imports/call sites
+(app/services/normalizer.py, this module's own former callers) keep working
+unchanged.
+
 Zoho Sprints statuses are project-configurable (unlike Linear's fixed
 6-value state_type enum), so there is no universal id->state_type table.
 Instead, `classify_status_name` seeds a best-effort guess from the status's
@@ -11,26 +17,6 @@ corrected directly in the table if a project's status naming is unusual.
 
 from __future__ import annotations
 
-# triage | backlog | unstarted | started | completed | canceled
-_COMPLETED_HINTS = ("done", "closed", "resolved", "shipped", "complete", "released")
-_CANCELED_HINTS = ("cancel", "rejected", "invalid", "duplicate", "won't fix", "wont fix")
-_STARTED_HINTS = ("progress", "wip", "active", "in review", "review", "testing", "qa")
-_TRIAGE_HINTS = ("triage", "unconfirmed", "needs info", "incoming")
-_BACKLOG_HINTS = ("backlog", "open", "new", "to do", "todo")
+from app.services.status_mapping import classify_status_name
 
-
-def classify_status_name(name: str | None) -> str:
-    """Best-effort default for a never-before-seen Zoho status name."""
-    n = (name or "").strip().lower()
-    if not n:
-        return "unstarted"
-    for hints, state_type in (
-        (_COMPLETED_HINTS, "completed"),
-        (_CANCELED_HINTS, "canceled"),
-        (_STARTED_HINTS, "started"),
-        (_TRIAGE_HINTS, "triage"),
-        (_BACKLOG_HINTS, "backlog"),
-    ):
-        if any(h in n for h in hints):
-            return state_type
-    return "unstarted"
+__all__ = ["classify_status_name"]

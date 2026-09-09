@@ -37,9 +37,10 @@ class Comment(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    # nullable: rows synced from Zoho Sprints carry zoho_id instead.
+    # nullable: rows synced from Zoho Sprints / GitHub carry zoho_id/github_id instead.
     linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     zoho_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     issue_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
     )

@@ -47,7 +47,8 @@ class Issue(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    # nullable: rows synced from Zoho Sprints carry zoho_id instead (see below).
+    # nullable: rows synced from Zoho Sprints / GitHub carry zoho_id/github_id
+    # instead (see below).
     linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     identifier: Mapped[str | None] = mapped_column(String(64))  # e.g. "ENG-123"
     title: Mapped[str | None] = mapped_column(Text)
@@ -73,11 +74,13 @@ class Issue(Base, TimestampMixin):
     # Reused for Zoho's `points` — same "size estimate" semantics as Linear's estimate.
     estimate: Mapped[float | None] = mapped_column(Float)
     project_id: Mapped[str | None] = mapped_column(String(64))  # Linear project id (no FK in v1)
-    # 'linear' (synced) | 'custom' (manually tracked) | 'zoho_sprints' (synced)
+    # 'linear' | 'custom' | 'zoho_sprints' | 'github' (all synced except 'custom')
     source: Mapped[str] = mapped_column(String(16), server_default="linear", nullable=False)
 
     # --- Zoho Sprints fields (nullable; unset on Linear/custom rows) ---
     zoho_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # --- GitHub fields (nullable; unset on non-GitHub rows) ---
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     # Who the item was actually marked done by; can differ from assignee_id
     # if it was reassigned after completion. No Linear equivalent.
     completed_by_id: Mapped[int | None] = mapped_column(

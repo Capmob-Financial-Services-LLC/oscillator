@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     # Safety margin under Zoho's documented ~30 calls/min.
     zoho_rate_limit_per_min: int = Field(default=28)
 
+    # GitHub sync (Issues + Projects v2). `github_sync_token` needs `repo` +
+    # `read:project` scope on the org that owns github_sync_org/repo — it is
+    # deliberately NOT named GITHUB_TOKEN, which Actions auto-populates with
+    # a same-repo-only token that would silently shadow a real PAT/App token.
+    github_sync_token: str = Field(default="")
+    github_sync_org: str = Field(default="")
+    github_sync_repo: str = Field(default="")
+    # The GitHub Projects v2 board whose "Status" field values are read for
+    # state_type mapping (see app/github/mapping.py) — a repo can be linked
+    # to more than one project, so this picks the right one by title.
+    github_project_title: str = Field(default="CAM MVP")
+
     # Groq (OpenAI-compatible) powers the narrative digest. When unset the
     # digest degrades gracefully to a deterministic templated summary.
     groq_api_key: str = Field(default="")
@@ -86,6 +98,10 @@ class Settings(BaseSettings):
     @property
     def zoho_configured(self) -> bool:
         return bool(self.zoho_client_id and self.zoho_refresh_token and self.zoho_team_id)
+
+    @property
+    def github_sync_configured(self) -> bool:
+        return bool(self.github_sync_token and self.github_sync_org and self.github_sync_repo)
 
 
 @lru_cache
