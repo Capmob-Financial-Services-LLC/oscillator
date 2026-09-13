@@ -270,7 +270,6 @@ class GitHubClient:
                 "GITHUB_SYNC_TOKEN / GITHUB_SYNC_ORG / GITHUB_SYNC_REPO are not configured."
             )
         self._client = httpx.AsyncClient(
-            base_url=GITHUB_GRAPHQL_URL,
             headers={
                 "Authorization": f"Bearer {self._token}",
                 "Content-Type": "application/json",
@@ -299,7 +298,14 @@ class GitHubClient:
         while True:
             attempt += 1
             try:
-                resp = await self._client.post("", json={"query": query, "variables": variables})
+                # Post the full URL explicitly rather than relying on a
+                # client-level base_url + empty-path join — httpx silently
+                # appends a trailing slash to a bare base_url
+                # (https://api.github.com/graphql -> .../graphql/), and
+                # GitHub's endpoint 404s on that trailing-slash form.
+                resp = await self._client.post(
+                    GITHUB_GRAPHQL_URL, json={"query": query, "variables": variables}
+                )
             except httpx.TransportError as exc:
                 if attempt >= MAX_RETRIES:
                     raise
