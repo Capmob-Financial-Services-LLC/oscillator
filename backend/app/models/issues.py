@@ -41,7 +41,9 @@ class Issue(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    linear_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # nullable: a row synced from GitHub carries github_id instead.
+    linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     identifier: Mapped[str | None] = mapped_column(String(64))  # e.g. "ENG-123"
     title: Mapped[str | None] = mapped_column(Text)
 
@@ -64,7 +66,7 @@ class Issue(Base, TimestampMixin):
     priority: Mapped[int | None] = mapped_column(Integer)  # 0=none .. 4=low
     estimate: Mapped[float | None] = mapped_column(Float)
     project_id: Mapped[str | None] = mapped_column(String(64))  # Linear project id (no FK in v1)
-    # 'linear' (synced) | 'custom' (manually tracked, e.g. "set up AWS")
+    # 'linear' | 'custom' (manually tracked) | 'github'
     source: Mapped[str] = mapped_column(String(16), server_default="linear", nullable=False)
 
     # Linear's own lifecycle timestamps

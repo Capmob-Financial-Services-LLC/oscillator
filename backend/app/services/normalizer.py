@@ -22,6 +22,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db_partitions import ensure_month_partition
+from app.github.client import (
+    GitHubActor,
+    GitHubComment,
+    GitHubIssue,
+    GitHubLabel,
+    GitHubMilestone,
+)
+from app.github.mapping import resolve_state
 from app.linear.client import (
     LinearComment,
     LinearCycle,
@@ -46,8 +54,13 @@ from app.models import (
 logger = logging.getLogger("app.normalizer")
 
 
-async def _land_raw(session: AsyncSession, event_type: str, dtos: Iterable) -> None:
-    rows = [{"event_type": event_type, "action": "sync", "payload": d.raw} for d in dtos]
+async def _land_raw(
+    session: AsyncSession, event_type: str, dtos: Iterable, *, source: str = "linear"
+) -> None:
+    rows = [
+        {"event_type": event_type, "action": "sync", "payload": d.raw, "source": source}
+        for d in dtos
+    ]
     if rows:
         await session.execute(pg_insert(RawEvent), rows)
 
@@ -55,6 +68,15 @@ async def _land_raw(session: AsyncSession, event_type: str, dtos: Iterable) -> N
 async def _id_map(session: AsyncSession, model) -> dict[str, int]:
     res = await session.execute(select(model.linear_id, model.id))
     return {linear_id: surrogate for linear_id, surrogate in res.all()}
+
+
+async def _id_map_by(session: AsyncSession, model, id_col: str) -> dict[str, int]:
+    """Same as _id_map but for a non-Linear source id column (e.g.
+    "github_id") — kept separate from _id_map so every existing Linear call
+    site stays untouched."""
+    col = getattr(model, id_col)
+    res = await session.execute(select(col, model.id).where(col.is_not(None)))
+    return {key: surrogate for key, surrogate in res.all()}
 
 
 async def upsert_teams(session: AsyncSession, teams: list[LinearTeam]) -> int:
@@ -415,3 +437,356 @@ async def upsert_issue_tags(session: AsyncSession, issues: list[LinearIssue]) ->
         await session.execute(pg_insert(IssueTagHistory), history_rows)
 
     return len(added_pairs) + len(removed_pairs), len(history_rows)
+
+
+# =============================================================================
+# GitHub-specific normalizers. Same idioms as the Linear functions above (land
+# raw -> resolve FK maps via _id_map_by(..., "github_id") -> upsert -> diff-
+# derived history rows), writing into the *same* tags/issue_tags/
+# issue_tag_history tables Linear labels already use — the Engineering Points
+# scoring job (app/jobs/score_points.py) matches on Tag.name regardless of
+# which source put it there, so nothing downstream of these functions needs
+# to change.
+# =============================================================================
+
+_GITHUB_SOURCE = "github"
+
+
+async def upsert_github_team(session: AsyncSession, repo_node: dict) -> int:
+    """A GitHub repo maps 1:1 onto a `teams` row, same as one Linear
+    workspace team. Single record, not a list, so it lands its own
+    raw_events row directly rather than going through _land_raw."""
+    await session.execute(
+        pg_insert(RawEvent),
+        [{"event_type": "GitHubRepo", "action": "sync", "payload": repo_node, "source": _GITHUB_SOURCE}],
+    )
+    stmt = pg_insert(Team).values(
+        [{"github_id": repo_node["id"], "key": repo_node.get("name"), "name": repo_node.get("name")}]
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[Team.github_id],
+        set_={"key": stmt.excluded.key, "name": stmt.excluded.name, "row_updated_at": func.now()},
+    )
+    await session.execute(stmt)
+    return 1
+
+
+async def upsert_github_actors(session: AsyncSession, users: list[GitHubActor]) -> int:
+    if not users:
+        return 0
+    await _land_raw(session, "GitHubActor", users, source=_GITHUB_SOURCE)
+    rows = [
+        {"github_id": u.id, "name": u.name or u.login, "avatar_url": u.avatar_url}
+        for u in users
+    ]
+    stmt = pg_insert(Actor).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[Actor.github_id],
+        set_={
+            "name": stmt.excluded.name,
+            "avatar_url": stmt.excluded.avatar_url,
+            "row_updated_at": func.now(),
+        },
+    )
+    await session.execute(stmt)
+    return len(rows)
+
+
+async def upsert_github_labels(session: AsyncSession, labels: list[GitHubLabel]) -> int:
+    """GitHub labels land in the same `tags` table Linear labels use — the
+    Engineering Points system matches on Tag.name, source-agnostic."""
+    if not labels:
+        return 0
+    await _land_raw(session, "GitHubLabel", labels, source=_GITHUB_SOURCE)
+    rows = [{"github_id": t.id, "name": t.name, "color_code": t.color} for t in labels]
+    stmt = pg_insert(Tag).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[Tag.github_id],
+        set_={
+            "name": stmt.excluded.name,
+            "color_code": stmt.excluded.color_code,
+            "row_updated_at": func.now(),
+        },
+    )
+    await session.execute(stmt)
+    return len(rows)
+
+
+async def upsert_github_milestones(
+    session: AsyncSession, milestones: list[GitHubMilestone], team_id: int | None
+) -> int:
+    """GitHub milestones land in the same `cycles` table Linear cycles use."""
+    if not milestones:
+        return 0
+    await _land_raw(session, "GitHubMilestone", milestones, source=_GITHUB_SOURCE)
+    rows = [
+        {
+            "github_id": m.id,
+            "team_id": team_id,
+            "number": m.number,
+            "name": m.title,
+            "ends_at": m.due_on,
+            "completed_at": m.closed_at,
+        }
+        for m in milestones
+    ]
+    stmt = pg_insert(Cycle).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[Cycle.github_id],
+        set_={
+            "team_id": stmt.excluded.team_id,
+            "number": stmt.excluded.number,
+            "name": stmt.excluded.name,
+            "ends_at": stmt.excluded.ends_at,
+            "completed_at": stmt.excluded.completed_at,
+            "row_updated_at": func.now(),
+        },
+    )
+    await session.execute(stmt)
+    return len(rows)
+
+
+async def upsert_github_issues(
+    session: AsyncSession, issues: list[GitHubIssue], team_id: int | None
+) -> tuple[int, int]:
+    """Upsert GitHub issues into `issues` and record state transitions.
+
+    Same snapshot-before-overwrite-then-diff shape as upsert_issues (Linear).
+    `state`/`state_type` are resolved per-issue via app.github.mapping
+    .resolve_state (CAM MVP project Status field first, GitHub's own
+    state/stateReason as fallback). Returns (upserted, transitions).
+    """
+    if not issues:
+        return 0, 0
+    await _land_raw(session, "GitHubIssue", issues, source=_GITHUB_SOURCE)
+
+    actor_map = await _id_map_by(session, Actor, "github_id")
+    cycle_map = await _id_map_by(session, Cycle, "github_id")
+
+    # Snapshot stored state BEFORE upserting so we can diff transitions.
+    res = await session.execute(
+        select(Issue.github_id, Issue.state, Issue.state_type).where(Issue.github_id.is_not(None))
+    )
+    stored = {gid: (st, stt) for gid, st, stt in res.all()}
+
+    transitions: list[dict] = []
+    rows = []
+    for it in issues:
+        state_name, state_type = resolve_state(
+            issue_state=it.state, state_reason=it.state_reason, project_status=it.project_status
+        )
+        changed_at = it.updated_at or it.created_at or datetime.now(UTC)
+        prev = stored.get(it.id)
+        if prev is None:
+            transitions.append(
+                {
+                    "issue_github_id": it.id, "changed_at": changed_at,
+                    "from_state": None, "from_state_type": None,
+                    "to_state": state_name, "to_state_type": state_type,
+                }
+            )
+        elif prev[0] != state_name or prev[1] != state_type:
+            transitions.append(
+                {
+                    "issue_github_id": it.id, "changed_at": changed_at,
+                    "from_state": prev[0], "from_state_type": prev[1],
+                    "to_state": state_name, "to_state_type": state_type,
+                }
+            )
+
+        completed_at = it.closed_at if state_type == "completed" else None
+        canceled_at = it.closed_at if state_type == "canceled" else None
+        # No real "started" signal exists on a GitHub issue/Project-v2 item —
+        # left null rather than guessed from created_at, which would distort
+        # cycle-time analytics.
+        started_at = None
+
+        rows.append(
+            {
+                "github_id": it.id,
+                "identifier": f"#{it.number}",
+                "title": it.title,
+                "team_id": team_id,
+                "assignee_id": actor_map.get(it.assignee_id) if it.assignee_id else None,
+                "creator_id": actor_map.get(it.creator_id) if it.creator_id else None,
+                "cycle_id": cycle_map.get(it.milestone_id) if it.milestone_id else None,
+                "state": state_name,
+                "state_type": state_type,
+                "source": _GITHUB_SOURCE,
+                "created_at": it.created_at,
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "canceled_at": canceled_at,
+                "updated_at": it.updated_at,
+            }
+        )
+
+    stmt = pg_insert(Issue).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[Issue.github_id],
+        set_={
+            c: getattr(stmt.excluded, c)
+            for c in (
+                "identifier", "title", "team_id", "assignee_id", "creator_id",
+                "cycle_id", "state", "state_type", "source",
+                "created_at", "started_at", "completed_at", "canceled_at", "updated_at",
+            )
+        }
+        | {"row_updated_at": func.now()},
+    )
+    await session.execute(stmt)
+
+    n_transitions = await _write_github_transitions(session, transitions)
+    return len(rows), n_transitions
+
+
+async def _write_github_transitions(session: AsyncSession, transitions: list[dict]) -> int:
+    if not transitions:
+        return 0
+    issue_map = await _id_map_by(session, Issue, "github_id")
+
+    conn = await session.connection()
+    months = {(t["changed_at"].year, t["changed_at"].month) for t in transitions}
+    for year, month in sorted(months):
+        await ensure_month_partition(conn, "issue_history", datetime(year, month, 1, tzinfo=UTC))
+
+    rows = []
+    for t in transitions:
+        issue_id = issue_map.get(t["issue_github_id"])
+        if issue_id is None:
+            continue
+        rows.append(
+            {
+                "issue_id": issue_id,
+                "changed_at": t["changed_at"],
+                "linear_id": None,  # GitHub-sourced; no Linear history node id
+                "actor_id": None,  # actor unknown without the Timeline API (v1 limitation)
+                "from_state": t["from_state"],
+                "from_state_type": t["from_state_type"],
+                "to_state": t["to_state"],
+                "to_state_type": t["to_state_type"],
+            }
+        )
+    if rows:
+        await session.execute(pg_insert(IssueHistory), rows)
+    return len(rows)
+
+
+async def upsert_github_issue_labels(session: AsyncSession, issues: list[GitHubIssue]) -> tuple[int, int]:
+    """Diff each issue's incoming label set against `issue_tags`, upsert the
+    current-state table, and append add/remove rows to `issue_tag_history`.
+
+    Identical shape to upsert_issue_tags (Linear) — same "poll-time diff, not
+    true edit instant" limitation applies here too, even though GitHub's
+    Timeline API *could* give us the real LabeledEvent timestamp; a future
+    iteration could read that directly for exact `reverted`/`triaged` timing
+    instead of approximating it as "whenever this sync run noticed it".
+    Returns (issue_tags rows touched, history rows written).
+    """
+    if not issues:
+        return 0, 0
+    issue_map = await _id_map_by(session, Issue, "github_id")
+    tag_map = await _id_map_by(session, Tag, "github_id")
+
+    incoming: dict[int, set[int]] = {}
+    for it in issues:
+        issue_id = issue_map.get(it.id)
+        if issue_id is None:
+            continue
+        incoming[issue_id] = {tag_map[lid] for lid in it.label_ids if lid in tag_map}
+
+    if not incoming:
+        return 0, 0
+
+    res = await session.execute(
+        select(IssueTag.issue_id, IssueTag.tag_id).where(
+            IssueTag.issue_id.in_(incoming.keys()), IssueTag.removed_at.is_(None)
+        )
+    )
+    current: dict[int, set[int]] = {}
+    for issue_id, tag_id in res.all():
+        current.setdefault(issue_id, set()).add(tag_id)
+
+    now = datetime.now(UTC)
+    added_pairs: list[tuple[int, int]] = []
+    removed_pairs: list[tuple[int, int]] = []
+    for issue_id, want in incoming.items():
+        have = current.get(issue_id, set())
+        added_pairs.extend((issue_id, tag_id) for tag_id in want - have)
+        removed_pairs.extend((issue_id, tag_id) for tag_id in have - want)
+
+    if added_pairs:
+        stmt = pg_insert(IssueTag).values(
+            [
+                {"issue_id": i, "tag_id": t, "added_at": now, "removed_at": None}
+                for i, t in added_pairs
+            ]
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[IssueTag.issue_id, IssueTag.tag_id],
+            set_={"added_at": now, "removed_at": None},
+        )
+        await session.execute(stmt)
+
+    if removed_pairs:
+        await session.execute(
+            IssueTag.__table__.update()
+            .where(tuple_(IssueTag.issue_id, IssueTag.tag_id).in_(removed_pairs))
+            .values(removed_at=now)
+        )
+
+    history_rows = [
+        {"issue_id": i, "tag_id": t, "action": "added", "changed_at": now}
+        for i, t in added_pairs
+    ] + [
+        {"issue_id": i, "tag_id": t, "action": "removed", "changed_at": now}
+        for i, t in removed_pairs
+    ]
+    if history_rows:
+        conn = await session.connection()
+        await ensure_month_partition(conn, "issue_tag_history", now)
+        await session.execute(pg_insert(IssueTagHistory), history_rows)
+
+    return len(added_pairs) + len(removed_pairs), len(history_rows)
+
+
+async def upsert_github_comments(session: AsyncSession, comments: list[GitHubComment]) -> int:
+    if not comments:
+        return 0
+    await _land_raw(session, "GitHubComment", comments, source=_GITHUB_SOURCE)
+    issue_map = await _id_map_by(session, Issue, "github_id")
+    actor_map = await _id_map_by(session, Actor, "github_id")
+
+    rows = []
+    skipped = 0
+    for c in comments:
+        issue_id = issue_map.get(c.issue_id)
+        if issue_id is None:
+            skipped += 1
+            continue
+        rows.append(
+            {
+                "github_id": c.id,
+                "issue_id": issue_id,
+                "actor_id": actor_map.get(c.user_id) if c.user_id else None,
+                "body": c.body,
+                "created_at": c.created_at,
+            }
+        )
+    if skipped:
+        logger.warning("Skipped %d GitHub comments referencing unknown issues", skipped)
+    if not rows:
+        return 0
+    stmt = pg_insert(Comment).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[Comment.github_id],
+        set_={
+            "issue_id": stmt.excluded.issue_id,
+            "actor_id": stmt.excluded.actor_id,
+            "body": stmt.excluded.body,
+            "created_at": stmt.excluded.created_at,
+            "row_updated_at": func.now(),
+        },
+    )
+    await session.execute(stmt)
+    return len(rows)
