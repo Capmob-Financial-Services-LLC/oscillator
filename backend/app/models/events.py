@@ -37,7 +37,9 @@ class Comment(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    linear_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # nullable: a row synced from GitHub carries github_id instead.
+    linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     issue_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False
     )

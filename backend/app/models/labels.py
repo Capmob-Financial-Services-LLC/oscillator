@@ -32,17 +32,20 @@ from app.models.base import TimestampMixin
 
 
 class Tag(Base, TimestampMixin):
-    """A Linear issue label, e.g. 'type:bug-fix', 'sev:critical', 'triaged'.
+    """A Linear or GitHub issue label, e.g. 'type:bug-fix', 'sev:critical', 'triaged'.
 
     `name` is the literal label string the Engineering Points system matches
     against (see app/models/points_rules.py) — not a display label, the key.
+    Keyed on whichever source id is set (linear_id or github_id).
     """
 
     __tablename__ = "tags"
     __table_args__ = (Index("ix_tags_name", "name"),)
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    linear_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # nullable: a row synced from GitHub carries github_id instead.
+    linear_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    github_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     team_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("teams.id", ondelete="CASCADE")
     )

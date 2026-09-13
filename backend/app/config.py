@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     database_url: str = Field(default="")
     dashboard_auth_token: str = Field(default="")
 
+    # GitHub sync (Issues + Projects v2). `github_sync_token` needs `repo` +
+    # `read:project` scope on the org that owns github_sync_org/repo — it is
+    # deliberately NOT named GITHUB_TOKEN, which Actions auto-populates with
+    # a same-repo-only token that would silently shadow a real PAT/App token.
+    github_sync_token: str = Field(default="")
+    github_sync_org: str = Field(default="")
+    github_sync_repo: str = Field(default="")
+    # The GitHub Projects v2 board whose "Status" field values are read for
+    # state_type mapping (see app/github/mapping.py) — a repo can be linked
+    # to more than one project, so this picks the right one by title.
+    github_project_title: str = Field(default="CAM MVP")
+
     # --- App behavior ---
     environment: str = Field(default="development")
     # TLS for the DB connection. Required by Neon (keep true in prod); set
@@ -60,6 +72,10 @@ class Settings(BaseSettings):
     @property
     def database_configured(self) -> bool:
         return bool(self.database_url)
+
+    @property
+    def github_sync_configured(self) -> bool:
+        return bool(self.github_sync_token and self.github_sync_org and self.github_sync_repo)
 
 
 @lru_cache
