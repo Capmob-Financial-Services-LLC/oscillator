@@ -1,0 +1,56 @@
+name: Merge Duplicate Actors
+
+# Manual-only maintenance tool — never scheduled. Folds a duplicate actor
+# (e.g. the same person's Linear row and GitHub row) into one, repointing
+# every issue/comment/points_events/etc. row that referenced the duplicate.
+# See app/jobs/merge_actors.py for exactly what it does and why.
+#
+# Defaults to a dry run: it prints what it WOULD do without committing.
+# Review that output, then re-run with "Apply" checked to make it permanent.
+on:
+  workflow_dispatch:
+    inputs:
+      pairs:
+        description: >
+          Semicolon-separated "keep_name:merge_name" pairs (case-insensitive
+          exact match against the actor's name), e.g.
+          "Sachin:sachin-capmob;Adarsh:adarshcapmob". Use "id:<n>" instead of
+          a name for either side if a name is ambiguous (the dry run will
+          list every match with its id when that happens).
+        required: true
+      apply:
+        description: "Actually commit the merge (unchecked = dry run only, nothing is written)"
+        type: boolean
+        default: false
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SSL: "true"
+        run: alembic upgrade head
+
+      - name: Merge actors
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DB_SSL: "true"
+        run: |
+          python -m app.jobs.merge_actors --pairs "${{ inputs.pairs }}" ${{ inputs.apply == true && '--apply' || '' }}
