@@ -48,7 +48,9 @@ jobs:
           # can't read a repo in a different org.
           GITHUB_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
           GITHUB_SYNC_ORG: Capmob-Financial-Services-LLC
-          GITHUB_SYNC_REPO: BSA
+          # Comma-separated — the PAT must have Issues:Read + Projects:Read
+          # on every repo listed here, not just the first one.
+          GITHUB_SYNC_REPOS: BSA,Capmob-AI
           GITHUB_PROJECT_TITLE: "CAM MVP"
           DB_SSL: "true"
         # A non-zero exit (any phase failed) fails the job loudly; the
