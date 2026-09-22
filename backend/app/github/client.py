@@ -249,7 +249,13 @@ query($owner:String!,$name:String!,$first:Int!,$after:String,$since:DateTime!){
 
 
 class GitHubClient:
-    """Thin async GraphQL client scoped to a single repo. Async context manager."""
+    """Thin async GraphQL client scoped to a single repo. Async context manager.
+
+    A repo must always be passed explicitly by multi-repo callers (see
+    app/jobs/sync_github.py, which loops over settings.github_sync_repo_list)
+    — the settings fallback below is a single-repo convenience for ad-hoc/
+    manual use only, and just picks the first configured repo.
+    """
 
     def __init__(
         self,
@@ -263,11 +269,12 @@ class GitHubClient:
         settings = get_settings()
         self._token = token or settings.github_sync_token
         self.owner = owner or settings.github_sync_org
-        self.repo = repo or settings.github_sync_repo
+        repo_list = settings.github_sync_repo_list
+        self.repo = repo or (repo_list[0] if repo_list else None)
         self.project_title = project_title or settings.github_project_title
         if not (self._token and self.owner and self.repo):
             raise RuntimeError(
-                "GITHUB_SYNC_TOKEN / GITHUB_SYNC_ORG / GITHUB_SYNC_REPO are not configured."
+                "GITHUB_SYNC_TOKEN / GITHUB_SYNC_ORG / GITHUB_SYNC_REPOS are not configured."
             )
         self._client = httpx.AsyncClient(
             headers={

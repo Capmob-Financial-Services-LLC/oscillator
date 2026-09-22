@@ -1,9 +1,14 @@
 """Cron sync entrypoint:  python -m app.jobs.sync_github
 
 Structurally mirrors app/jobs/sync.py (Linear): same watermark-in-sync_state
-pattern, same phased-transaction / refresh-views skeleton. Pulls from a
-single GitHub repo (the CAM MVP board's tracked repo) via
-app/github/client.py.
+pattern, same phased-transaction / refresh-views skeleton. Pulls from every
+repo in settings.github_sync_repo_list (e.g. "BSA,Capmob-AI") via
+app/github/client.py — one GitHubClient per repo, each repo becoming its own
+`teams` row, exactly like Linear's multiple workspace teams. ONE shared
+watermark covers every repo (same `since` cutoff applied to each repo's
+`fetch_issues`), mirroring how the old Zoho sync looped multiple projects
+under a single watermark — simpler than per-repo cursors, and still correct/
+idempotent if one repo's window reprocesses a bit more than another's.
 
 Unlike Linear, `since` filtering applies ONLY to issues (GitHub's
 `filterBy.since` on the issues connection, same semantics as Linear's
@@ -14,7 +19,9 @@ along inside each fetched issue (see app/github/client.py), so there is no
 separate comments phase.
 
 Watermark: last_synced_at in sync_state (key='github'). Advances only after
-every phase below succeeds, same all-or-nothing safety net as sync.py.
+every repo's every phase below succeeds, same all-or-nothing safety net as
+sync.py — one repo's failure blocks the watermark for all of them, so a
+partial run never gets silently treated as complete.
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
 from app.db_partitions import ensure_partitions_around
 from app.github.client import GitHubClient
@@ -55,22 +63,14 @@ async def _write_watermark(session, ts: datetime) -> None:
     await session.execute(stmt)
 
 
-async def run_github_sync() -> dict:
-    run_start = datetime.now(UTC)
-    engine = get_engine()
-    Session = get_sessionmaker()
+def _add(total: dict, part: dict) -> None:
+    for k, v in part.items():
+        total[k] = total.get(k, 0) + v
 
-    async with engine.begin() as conn:
-        await ensure_partitions_around(conn, run_start)
 
-    async with Session() as session:
-        last = await _read_watermark(session)
-    since = (last - OVERLAP) if last else None
-    mode = "incremental" if last else "full backfill"
-    logger.info("GitHub sync start (%s); previous watermark=%s", mode, last.isoformat() if last else None)
-
-    # --- pull from GitHub ---
-    async with GitHubClient() as client:
+async def _sync_one_repo(Session, repo_name: str, since: datetime | None) -> tuple[dict, dict]:
+    """Pull + upsert a single repo. Returns (pulled, upserted) count dicts."""
+    async with GitHubClient(repo=repo_name) as client:
         repo = await client.fetch_repo()
         labels = await client.fetch_labels()
         users = await client.fetch_assignable_users()
@@ -83,9 +83,8 @@ async def run_github_sync() -> dict:
         "labels": len(labels), "users": len(users), "milestones": len(milestones),
         "issues": len(issues), "comments": len(comments),
     }
-    logger.info("Pulled: %s", pulled)
+    logger.info("[%s] Pulled: %s", repo_name, pulled)
 
-    # --- normalize (dependency order; commit per phase) ---
     counts: dict[str, int] = {}
     async with Session() as session:
         async with session.begin():
@@ -119,19 +118,49 @@ async def run_github_sync() -> dict:
             )
         async with session.begin():
             counts["comments"] = await normalizer.upsert_github_comments(session, comments)
-    logger.info("Upserted: %s", counts)
+    logger.info("[%s] Upserted: %s", repo_name, counts)
+
+    return pulled, counts
+
+
+async def run_github_sync() -> dict:
+    run_start = datetime.now(UTC)
+    engine = get_engine()
+    Session = get_sessionmaker()
+    repos = get_settings().github_sync_repo_list
+    if not repos:
+        raise RuntimeError("GITHUB_SYNC_REPOS is not configured (comma-separated repo list).")
+
+    async with engine.begin() as conn:
+        await ensure_partitions_around(conn, run_start)
+
+    async with Session() as session:
+        last = await _read_watermark(session)
+    since = (last - OVERLAP) if last else None
+    mode = "incremental" if last else "full backfill"
+    logger.info(
+        "GitHub sync start (%s); repos=%s; previous watermark=%s",
+        mode, repos, last.isoformat() if last else None,
+    )
+
+    pulled: dict[str, int] = {}
+    counts: dict[str, int] = {}
+    for repo_name in repos:
+        repo_pulled, repo_counts = await _sync_one_repo(Session, repo_name, since)
+        _add(pulled, repo_pulled)
+        _add(counts, repo_counts)
 
     # --- refresh rollups ---
     views = await refresh_all_views(engine)
 
-    # --- advance watermark only after full success ---
+    # --- advance watermark only after every repo fully succeeded ---
     async with Session() as session:
         async with session.begin():
             await _write_watermark(session, run_start)
     logger.info("GitHub watermark advanced to %s", run_start.isoformat())
 
     return {
-        "mode": mode, "watermark": run_start, "pulled": pulled,
+        "mode": mode, "watermark": run_start, "repos": repos, "pulled": pulled,
         "upserted": counts, "views_refreshed": views,
     }
 
@@ -147,6 +176,7 @@ def main() -> int:
         return 1
     print("\n=== GITHUB SYNC SUMMARY ===")
     print(f"mode:       {result['mode']}")
+    print(f"repos:      {result['repos']}")
     print(f"watermark:  {result['watermark'].isoformat()}")
     print(f"pulled:     {result['pulled']}")
     print(f"upserted:   {result['upserted']}")
