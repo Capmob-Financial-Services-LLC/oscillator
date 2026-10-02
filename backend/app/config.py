@@ -35,15 +35,21 @@ class Settings(BaseSettings):
     # — each becomes its own `teams` row (see app/jobs/sync_github.py),
     # exactly like Linear's multiple workspace teams.
     github_sync_repos: str = Field(default="")
-    # The GitHub Projects v2 board whose "Status" field values are read for
-    # state_type mapping (see app/github/mapping.py) — a repo can be linked
-    # to more than one project, so this picks the right one by title. Shared
-    # across every repo in github_sync_repos.
-    github_project_title: str = Field(default="CAM MVP")
+    # The GitHub Projects v2 boards whose "Status" field values are read for
+    # state_type mapping (see app/github/mapping.py), by title, comma-separated.
+    # More than one because the org runs two boards: "BSA MVP" (#7, the BSA
+    # repo) and "capmob.ai" (#9, every other repo). An issue takes its status
+    # from whichever listed board it is on. The old default, "CAM MVP", named
+    # a board that no longer exists, so no status was ever read.
+    github_project_title: str = Field(default="BSA MVP,capmob.ai")
 
     @property
     def github_sync_repo_list(self) -> list[str]:
         return [r.strip() for r in self.github_sync_repos.split(",") if r.strip()]
+
+    @property
+    def github_project_titles(self) -> frozenset[str]:
+        return frozenset(t.strip() for t in self.github_project_title.split(",") if t.strip())
 
     # --- App behavior ---
     environment: str = Field(default="development")

@@ -14,10 +14,10 @@ retry/backoff on 429/5xx respecting Retry-After. GitHub-specific wrinkles:
   AND a page of comments, all nested in one GraphQL selection. So
   fetch_issues() also returns each issue's comments (flattened out by the
   caller) instead of a separate fetch_comments() call.
-* Each issue's Projects-v2 "Status" field value (the CAM MVP board's status
-  column) is pulled via `projectItems.fieldValueByName(name:"Status")` —
-  matched against `project_title` so a repo linked to multiple projects only
-  picks up the one we care about.
+* Each issue's Projects-v2 "Status" field value is pulled via
+  `projectItems.fieldValueByName(name:"Status")` and matched against the
+  configured board titles (GITHUB_PROJECT_TITLE, comma-separated), so a repo
+  linked to unrelated projects only picks up the boards we track.
 """
 
 from __future__ import annotations
@@ -136,7 +136,12 @@ class GitHubIssue(BaseModel):
     raw: dict[str, Any]
 
     @classmethod
-    def from_node(cls, n: dict, *, project_title: str) -> GitHubIssue:
+    def from_node(cls, n: dict, *, project_title: str | frozenset[str]) -> GitHubIssue:
+        titles = (
+            frozenset(t.strip() for t in project_title.split(",") if t.strip())
+            if isinstance(project_title, str)
+            else project_title
+        )
         assignees = (n.get("assignees") or {}).get("nodes") or []
         labels = (n.get("labels") or {}).get("nodes") or []
         comment_conn = n.get("comments") or {}
@@ -145,7 +150,7 @@ class GitHubIssue(BaseModel):
         status = None
         for item in (n.get("projectItems") or {}).get("nodes") or []:
             project = item.get("project") or {}
-            if project.get("title") != project_title:
+            if project.get("title") not in titles:
                 continue
             fv = item.get("fieldValueByName")
             if fv and fv.get("name"):
