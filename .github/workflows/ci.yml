@@ -1,0 +1,59 @@
+# CI for oscillator: what Vercel's own checks do not cover.
+#
+# Vercel already builds the frontend and the backend on every PR and deploys
+# main, and reports both as checks. It does not type-check the frontend and
+# does not run the backend's tests, so those run here.
+#
+# Not here yet, and why:
+#   - ruff: 55 findings on main today (50 are line length). Fix or configure
+#     them, then add `ruff check .` to the backend job.
+#   - the 16 tests that need a live DATABASE_URL skip without one. They run
+#     once a test database is wired in.
+#
+# This repo is public: a fork's PR gets a read-only token and no secrets,
+# which is all these jobs need.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q
