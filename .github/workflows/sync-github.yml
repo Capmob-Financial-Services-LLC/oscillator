@@ -50,8 +50,10 @@ jobs:
           GITHUB_SYNC_ORG: Capmob-Financial-Services-LLC
           # Comma-separated — the PAT must have Issues:Read + Projects:Read
           # on every repo listed here, not just the first one.
-          GITHUB_SYNC_REPOS: BSA,Capmob-AI
-          GITHUB_PROJECT_TITLE: "CAM MVP"
+          # Every active repo. BSA's issues live on "BSA MVP" (#7), every other
+          # repo's on "capmob.ai" (#9); status is read from whichever it is on.
+          GITHUB_SYNC_REPOS: BSA,Capmob-AI,capmob-web,capmob-cms,capmob-CRM,CAPBoard,infra,oscillator
+          GITHUB_PROJECT_TITLE: "BSA MVP,capmob.ai"
           DB_SSL: "true"
         # A non-zero exit (any phase failed) fails the job loudly; the
         # watermark is NOT advanced, so the next run safely re-syncs.
