@@ -1,4 +1,4 @@
-"""Delivery score end to end: seeded issues -> /api/delivery -> counts and score.
+"""Delivery score end to end: seeded issues -> /api/insights/delivery -> counts and score.
 Requires a live DATABASE_URL (skipped otherwise); wipes the tables it uses."""
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ async def _get(path: str) -> dict:
 
 
 async def test_counts_and_score():
-    body = await _get(f"/api/delivery?today={TODAY}")
+    body = await _get(f"/api/insights/delivery?today={TODAY}")
     ada = body["by_actor"][0]
     assert (ada["on_time"], ada["late"], ada["overdue"], ada["due_soon"]) == (2, 1, 1, 1)
     assert ada["avg_days_late"] == 4.0
@@ -97,18 +97,18 @@ async def test_counts_and_score():
 
 
 async def test_lists_and_links():
-    body = await _get(f"/api/delivery?today={TODAY}")
+    body = await _get(f"/api/insights/delivery?today={TODAY}")
     assert [(d["identifier"], d["days"]) for d in body["overdue"]] == [("#4", 3)]
     assert [(d["identifier"], d["days"]) for d in body["due_soon"]] == [("#5", 3)]
     assert body["overdue"][0]["url"] == "https://github.com/Capmob-Financial-Services-LLC/BSA/issues/4"
 
 
 async def test_nothing_due_means_no_score():
-    body = await _get("/api/delivery?today=2026-10-03&since=2026-12-01")
+    body = await _get("/api/insights/delivery?today=2026-10-03&since=2026-12-01")
     assert body["by_actor"] == [] and body["totals"]["score"] is None
 
 
 async def test_requires_the_token():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        assert (await c.get("/api/delivery")).status_code in (401, 403)
+        assert (await c.get("/api/insights/delivery")).status_code in (401, 403)

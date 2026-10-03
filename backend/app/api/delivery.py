@@ -28,7 +28,11 @@ from app.config import get_settings
 from app.db import get_session
 from app.schemas.delivery import DatedIssue, DeliveryResponse, DeliveryStat
 
-router = APIRouter(prefix="/api/delivery", tags=["delivery"], dependencies=[Depends(require_token)])
+# Under /api/insights so the frontend's existing token-injecting proxy
+# (app/api/insights/[...path]) serves it with no new route.
+router = APIRouter(
+    prefix="/api/insights/delivery", tags=["delivery"], dependencies=[Depends(require_token)]
+)
 
 # The 31 Oct plan's first sprint. The default window starts here, so the score
 # covers exactly the period the dates were set for.
