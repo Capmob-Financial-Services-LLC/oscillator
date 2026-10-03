@@ -223,6 +223,7 @@ export interface UnscoredTicketItem {
   first_detected_at: string;
   last_checked_at: string;
   notified_at: string | null;
+  team: string | null;
 }
 
 export interface UnscoredResp {
@@ -230,3 +231,38 @@ export interface UnscoredResp {
   tickets: UnscoredTicketItem[];
 }
 
+
+// ---- Delivery: was dated work finished by its Target date -------------------
+
+export interface DeliveryStat {
+  actor_id: number | null;
+  name: string;
+  avatar_url: string | null;
+  on_time: number;
+  late: number;
+  overdue: number;
+  due_soon: number;
+  avg_days_late: number | null;
+  /** 100 x on_time / (on_time + late + overdue); null when nothing was due. */
+  score: number | null;
+}
+
+export interface DatedIssue {
+  identifier: string | null;
+  title: string | null;
+  team: string | null;
+  assignee: string | null;
+  target_date: string;
+  /** Days past the date (overdue) or until it (due soon). */
+  days: number;
+  url: string | null;
+}
+
+export interface DeliveryResp {
+  since: string;
+  today: string;
+  totals: DeliveryStat;
+  by_actor: DeliveryStat[];
+  overdue: DatedIssue[];
+  due_soon: DatedIssue[];
+}
