@@ -74,9 +74,11 @@ async def ready() -> dict[str, object]:
 
 
 from app.api import custom_issues  # noqa: E402
+from app.api import delivery  # noqa: E402
 from app.api import insights  # noqa: E402
 from app.api import points  # noqa: E402
 
 app.include_router(insights.router)
 app.include_router(custom_issues.router)
 app.include_router(points.router)
+app.include_router(delivery.router)
