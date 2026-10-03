@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -596,10 +596,16 @@ async def upsert_github_issues(
 
         completed_at = it.closed_at if state_type == "completed" else None
         canceled_at = it.closed_at if state_type == "canceled" else None
-        # No real "started" signal exists on a GitHub issue/Project-v2 item —
-        # left null rather than guessed from created_at, which would distort
-        # cycle-time analytics.
-        started_at = None
+        # GitHub has no "started" event. The org's Start date issue field is
+        # the one stated signal, so it is used, and only for work that really
+        # did start (started or completed). Never guessed from created_at,
+        # which would distort cycle time. Without it, cycle time and WIP were
+        # empty for every GitHub issue.
+        started_at = (
+            datetime.combine(it.start_date, time(0, 0), tzinfo=UTC)
+            if it.start_date and state_type in ("started", "completed")
+            else None
+        )
 
         rows.append(
             {
