@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { DM_Mono, Inter } from "next/font/google";
+import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 
 import { Shell } from "@/components/shell";
 
-// Inter for body/labels, DM Mono for every number + KPI. Exposed as CSS
-// variables (--font-sans / --font-mono) consumed by globals.css + Tailwind.
+// BSA's pairing: Inter for body and labels, Poppins for every number, KPI and
+// heading. Exposed as --font-sans / --font-mono (the old name, kept so no
+// component changes) and consumed by globals.css + Tailwind.
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -13,16 +14,16 @@ const inter = Inter({
   display: "swap",
 });
 
-const dmMono = DM_Mono({
+const poppins = Poppins({
   subsets: ["latin"],
   variable: "--font-mono",
-  weight: ["300", "400", "500"],
+  weight: ["300", "400", "500", "600"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Oscillator",
-  description: "Team activity instrumentation for software teams on Linear",
+  description: "Capmob engineering: who shipped what, and whether it shipped on time.",
 };
 
 export default function RootLayout({
@@ -31,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${dmMono.variable}`}>
+    <html lang="en" className={`${inter.variable} ${poppins.variable}`}>
       <body>
         <Shell>{children}</Shell>
       </body>

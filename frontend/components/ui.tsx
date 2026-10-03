@@ -50,7 +50,7 @@ export function Panel({
 }) {
   const hasHeader = eyebrow || title || subtitle || action;
   return (
-    <section className={`relative border border-edge bg-surface ${className}`}>
+    <section className={`relative overflow-hidden rounded-lg border border-edge bg-surface ${className}`}>
       {loading && <div className="loadbar" aria-hidden />}
       {hasHeader && (
         <header className="flex items-start justify-between gap-4 border-b border-edge px-6 py-5">
@@ -183,7 +183,7 @@ export function Kpi({
   const sign = hasDelta && deltaPct! > 0 ? "+" : "";
 
   return (
-    <div className="relative flex flex-col gap-4 border border-edge bg-surface px-6 py-7">
+    <div className="relative flex flex-col gap-4 overflow-hidden rounded-lg border border-edge bg-surface px-6 py-7">
       <div className="flex items-center gap-2.5">
         <span
           aria-hidden
