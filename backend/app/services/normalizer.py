@@ -618,6 +618,8 @@ async def upsert_github_issues(
                 "completed_at": completed_at,
                 "canceled_at": canceled_at,
                 "updated_at": it.updated_at,
+                "start_date": it.start_date,
+                "target_date": it.target_date,
             }
         )
 
@@ -630,6 +632,7 @@ async def upsert_github_issues(
                 "identifier", "title", "team_id", "assignee_id", "creator_id",
                 "cycle_id", "state", "state_type", "source",
                 "created_at", "started_at", "completed_at", "canceled_at", "updated_at",
+                "start_date", "target_date",
             )
         }
         | {"row_updated_at": func.now()},
