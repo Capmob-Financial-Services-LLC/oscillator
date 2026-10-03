@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_token
 from app.api.insights import _period_bounds, _ref
 from app.db import get_session
-from app.models import Actor, Issue, PointsEvent, UnscoredTicket
+from app.models import Actor, Issue, PointsEvent, Team, UnscoredTicket
 from app.schemas.insights import Range
 from app.schemas.points import (
     PointsActorStat,
@@ -138,9 +138,10 @@ async def unscored_tickets(
     points endpoints."""
     rows = (
         await session.execute(
-            select(UnscoredTicket, Issue.identifier, Issue.title, Actor.name)
+            select(UnscoredTicket, Issue.identifier, Issue.title, Actor.name, Team.name)
             .join(Issue, Issue.id == UnscoredTicket.issue_id)
             .outerjoin(Actor, Actor.id == UnscoredTicket.assignee_id)
+            .outerjoin(Team, Team.id == Issue.team_id)
             .where(UnscoredTicket.resolved_at.is_(None))
             .order_by(UnscoredTicket.first_detected_at)
         )
@@ -150,8 +151,8 @@ async def unscored_tickets(
             issue_id=ut.issue_id, identifier=identifier, title=title,
             assignee_id=ut.assignee_id, assignee_name=name, reason=ut.reason,
             first_detected_at=ut.first_detected_at, last_checked_at=ut.last_checked_at,
-            notified_at=ut.notified_at,
+            notified_at=ut.notified_at, team=team,
         )
-        for ut, identifier, title, name in rows
+        for ut, identifier, title, name, team in rows
     ]
     return UnscoredResponse(range=range, tickets=tickets)
