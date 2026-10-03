@@ -68,6 +68,8 @@ class UnscoredTicketItem(BaseModel):
     first_detected_at: datetime
     last_checked_at: datetime
     notified_at: datetime | None = None
+    # The repo (GitHub) or team (Linear): "#120" alone is ambiguous across repos.
+    team: str | None = None
 
 
 class UnscoredResponse(BaseModel):

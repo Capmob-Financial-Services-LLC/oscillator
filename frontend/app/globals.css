@@ -8,54 +8,44 @@
    strictly for negative deltas / scope-added.
    ============================================================================ */
 :root {
-  --void: #080b0f; /* near-black, blue undertone — viewport + nav */
-  --surface: #0e1117; /* primary panel/card background */
-  --edge: #1c2333; /* borders, dividers, separators */
-  --signal: #4fffb0; /* THE accent — pale electric mint, used sparingly */
-  --ink: #e8edf5; /* primary text, cool white */
-  --muted: #4a5568; /* secondary labels, timestamps, de-emphasized data */
-  --negative: #ff6b6b; /* permitted exception: negative deltas only */
+  /* BSA branding (Capmob BSA, frontend/src/index.css): a light product, ink
+     text on white cards over a soft grey ground, with the brand orange as the
+     one accent. The token NAMES are unchanged, so every page re-themes. */
+  --void: #f4f4f4; /* page ground (BSA --color-surface) */
+  --surface: #ffffff; /* cards and panels */
+  --edge: #e6e6e6; /* borders and dividers (BSA rgba(5,5,5,0.1) on white) */
+  --signal: #e4602a; /* THE accent: BSA brand orange, used sparingly */
+  --ink: #050505; /* primary text (BSA --color-ink) */
+  --muted: #6b7280; /* secondary labels (BSA --color-muted) */
+  --negative: #dc2626; /* negative deltas only (BSA --color-danger) */
 
-  --signal-rgb: 79, 255, 176;
+  --signal-rgb: 228, 96, 42;
 
-  /* ---- Gamification accent palette (layered on top of CADENCE) ------------
-     Used by the XP / leaderboard / badge / streak / quest surfaces. The core
-     six tokens above still drive the charts and existing chrome unchanged. */
-  --xp-purple: #7f77dd;
-  --xp-teal: #1d9e75;
-  --xp-amber: #ba7517;
-  --xp-coral: #d85a30;
-  --xp-blue: #185fa5;
+  /* Chart and gamification hues, picked to stay distinguishable and legible
+     on white. Each keeps the hue its name promises (copy such as "blue =
+     today" depends on it): BSA's flow-in teal, the validated status blue,
+     the brand orange and its darker hover, and a violet. */
+  --xp-purple: #7b5cc4;
+  --xp-teal: #0d8b7d;
+  --xp-amber: #ff9647;
+  --xp-coral: #e4602a;
+  --xp-blue: #3a45c0;
 
-  --xp-purple-rgb: 127, 119, 221;
-  --xp-teal-rgb: 29, 158, 117;
-  --xp-amber-rgb: 186, 117, 23;
-  --xp-coral-rgb: 216, 90, 48;
-  --xp-blue-rgb: 24, 95, 165;
+  --xp-purple-rgb: 123, 92, 196;
+  --xp-teal-rgb: 13, 139, 125;
+  --xp-amber-rgb: 255, 150, 71;
+  --xp-coral-rgb: 228, 96, 42;
+  --xp-blue-rgb: 58, 69, 192;
 
-  color-scheme: dark;
-}
-
-/* The app ships dark-first (color-scheme: dark above). Every gamification
-   surface is painted from these CSS variables — never hard-coded neutrals —
-   so a `light` theme is a pure token swap with no component changes. The opt-in
-   hook below is dormant unless `data-theme="light"` is set on <html>. */
-:root[data-theme="light"],
-.theme-light {
-  --void: #f4f6fb;
-  --surface: #ffffff;
-  --edge: #dfe4ee;
-  --ink: #10151f;
-  --muted: #6b7688;
   color-scheme: light;
 }
 
 /* Fonts are injected as CSS variables by next/font in layout.tsx:
-   --font-mono (DM Mono) and --font-sans (Inter). */
+   --font-mono (Poppins: figures and headings) and --font-sans (Inter: body),
+   BSA's pairing. The variable keeps its old name so nothing else changes. */
 
 * {
   box-sizing: border-box;
-  border-radius: 0; /* the signature: sharp corners everywhere */
 }
 
 html,

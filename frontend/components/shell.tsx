@@ -33,6 +33,7 @@ export function useRange(): RangeCtx {
 }
 
 const NAV = [
+  { href: "/at-a-glance", label: "At a glance" },
   { href: "/", label: "Overview" },
   { href: "/trends", label: "Trends" },
   { href: "/people", label: "People" },

@@ -8,10 +8,11 @@ composite PK (id, changed_at).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -75,6 +76,11 @@ class Issue(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Planned dates (GitHub's org "Start date" / "Target date" issue fields).
+    # target_date is the deadline the delivery score measures against.
+    start_date: Mapped[date | None] = mapped_column(Date)
+    target_date: Mapped[date | None] = mapped_column(Date)
 
 
 class IssueHistory(Base):

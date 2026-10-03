@@ -29,9 +29,14 @@ const config: Config = {
       "xp-coral": "var(--xp-coral)",
       "xp-blue": "var(--xp-blue)",
     },
+    // BSA's soft corners (it rounds cards and controls; the old theme's
+    // sharp corners were its signature).
     borderRadius: {
       none: "0",
-      DEFAULT: "0", // sharp corners are the signature
+      sm: "6px",
+      DEFAULT: "8px",
+      lg: "12px",
+      full: "9999px",
     },
     boxShadow: {
       none: "none",

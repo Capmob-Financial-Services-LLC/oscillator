@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
@@ -123,7 +123,11 @@ class GitHubIssue(BaseModel):
     title: str | None = None
     state: str = "OPEN"  # OPEN | CLOSED
     state_reason: str | None = None  # COMPLETED | NOT_PLANNED | REOPENED | None
-    project_status: str | None = None  # CAM MVP board's Status field option name, if set
+    project_status: str | None = None  # tracked board's Status field option name, if set
+    # The org's "Start date" / "Target date" issue fields (shared by both
+    # boards). Target date is the deadline the delivery score measures against.
+    start_date: date | None = None
+    target_date: date | None = None
     assignee_id: str | None = None  # first assignee, mirroring Linear's single-assignee shape
     creator_id: str | None = None
     milestone_id: str | None = None
@@ -157,8 +161,15 @@ class GitHubIssue(BaseModel):
                 status = fv["name"]
                 break
 
+        dates = {}
+        for fv in (n.get("issueFieldValues") or {}).get("nodes") or []:
+            name = ((fv or {}).get("field") or {}).get("name")
+            if name in ("Start date", "Target date") and fv.get("value"):
+                dates[name] = date.fromisoformat(fv["value"][:10])
+
         issue = cls(
             id=n["id"], number=n["number"], title=n.get("title"),
+            start_date=dates.get("Start date"), target_date=dates.get("Target date"),
             state=n.get("state") or "OPEN", state_reason=n.get("stateReason"),
             project_status=status,
             assignee_id=assignees[0]["id"] if assignees else None,
@@ -244,6 +255,11 @@ query($owner:String!,$name:String!,$first:Int!,$after:String,$since:DateTime!){
             fieldValueByName(name:"Status"){
               ... on ProjectV2ItemFieldSingleSelectValue{ name }
             }
+          }
+        }
+        issueFieldValues(first:10){
+          nodes{
+            ... on IssueFieldDateValue{ value field{ ... on IssueFieldDate{ name } } }
           }
         }
       }
